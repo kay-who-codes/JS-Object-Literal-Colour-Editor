@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chroma — JS Color Object Editor</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg: #131313;
+    --bg-elevated: #1a1a1a;
+    --bg-card: #1f1f1f;
+    --bg-input: #161616;
+    --border: #2a2a2a;
+    --border-hover: #3a3a3a;
+    --text: #e8e8e8;
+    --text-muted: #666;
+    --text-dim: #999;
+    --accent: #e8d8a1;
+    --accent-dim: rgba(232,216,161,0.12);
+    --accent-glow: rgba(232,216,161,0.06);
+    --secondary: #b8edff;
+    --secondary-dim: rgba(184,237,255,0.1);
+    --danger: #ff6b6b;
+    --success: #6bffb8;
+    --mono: 'Space Mono', monospace;
+    --sans: 'Syne', sans-serif;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --transition: 0.18s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+    line-height: 1.6;
+  }
+
+  /* ── Noise texture overlay ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Layout ── */
+  .app {
+    position: relative;
+    z-index: 1;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 20px 60px;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 36px 0 28px;
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .logo-area { flex: 1; min-width: 200px; }
+
+  .logo {
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: clamp(2rem, 6vw, 3.2rem);
+    letter-spacing: -0.03em;
+    color: var(--accent);
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.7); }
+  }
+
+  .tagline {
+    margin-top: 4px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  /* ── Two-column layout ── */
+  .workspace {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+
+  @media (max-width: 640px) {
+    .workspace { grid-template-columns: 1fr; }
+  }
+
+  /* ── Panel ── */
+  .panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color var(--transition);
+  }
+
+  .panel:hover { border-color: var(--border-hover); }
+
+  .panel-header {
+    padding: 14px 18px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .panel-badge {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: 1px solid rgba(232,216,161,0.2);
+  }
+
+  /* ── Input area ── */
+  .input-area { padding: 0; }
+
+  textarea#code-input {
+    width: 100%;
+    min-height: 280px;
+    background: var(--bg-input);
+    border: none;
+    outline: none;
+    resize: vertical;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 1.7;
+    color: var(--text-dim);
+    padding: 18px;
+    caret-color: var(--accent);
+    transition: color var(--transition);
+  }
+
+  textarea#code-input:focus { color: var(--text); }
+
+  textarea#code-input::selection {
+    background: rgba(232,216,161,0.18);
+  }
+
+  .input-hint {
+    padding: 10px 18px;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .hint-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--secondary);
+    flex-shrink: 0;
+  }
+
+  /* ── Color entries ── */
+  .entries-panel { }
+
+  .entries-list {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 420px;
+    overflow-y: auto;
+  }
+
+  .entries-list::-webkit-scrollbar { width: 4px; }
+  .entries-list::-webkit-scrollbar-track { background: transparent; }
+  .entries-list::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 2px; }
+
+  .entry {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: all var(--transition);
+    animation: entryIn 0.22s ease forwards;
+  }
+
+  @keyframes entryIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .entry:hover {
+    border-color: var(--border-hover);
+    background: #222;
+  }
+
+  /* Color swatch — acts as color picker trigger */
+  .swatch-wrap {
+    position: relative;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    transition: transform var(--transition), box-shadow var(--transition);
+  }
+
+  .swatch-wrap:hover {
+    transform: scale(1.08);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+  }
+
+  .swatch {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    transition: background var(--transition);
+  }
+
+  .color-input-hidden {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+    border: none;
+    padding: 0;
+  }
+
+  .entry-info { flex: 1; min-width: 0; }
+
+  .entry-key {
+    font-family: var(--sans);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .entry-hex-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 3px;
+  }
+
+  .entry-hex {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    padding: 3px 7px;
+    width: 96px;
+    outline: none;
+    transition: all var(--transition);
+    letter-spacing: 0.04em;
+  }
+
+  .entry-hex:focus {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-glow);
+  }
+
+  /* Opacity badge */
+  .entry-actions { display: flex; align-items: center; gap: 6px; }
+
+  .btn-remove {
+    width: 28px; height: 28px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--transition);
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .btn-remove:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+    background: rgba(255,107,107,0.08);
+  }
+
+  /* ── Add entry row ── */
+  .add-row {
+    padding: 10px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .add-row input {
+    flex: 1;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 0.8rem;
+    padding: 8px 12px;
+    outline: none;
+    min-height: 36px;
+    transition: border-color var(--transition);
+  }
+
+  .add-row input:focus { border-color: var(--accent); }
+  .add-row input::placeholder { color: var(--text-muted); }
+
+  .add-row .swatch-wrap-new {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    border: 1px dashed var(--border-hover);
+    overflow: hidden;
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color var(--transition);
+  }
+
+  .add-row .swatch-wrap-new:hover { border-color: var(--accent); }
+
+  .add-row .swatch-wrap-new .swatch-new {
+    width: 100%; height: 100%;
+  }
+
+  .btn-add {
+    min-width: 36px; height: 36px;
+    background: var(--accent-dim);
+    border: 1px solid rgba(232,216,161,0.25);
+    border-radius: var(--radius-sm);
+    color: var(--accent);
+    font-size: 18px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--transition);
+    flex-shrink: 0;
+  }
+
+  .btn-add:hover {
+    background: rgba(232,216,161,0.22);
+    border-color: var(--accent);
+    transform: scale(1.06);
+  }
+
+  /* ── Output panel (full width) ── */
+  .output-wrap {
+    margin-top: 16px;
+  }
+
+  .output-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .output-actions { display: flex; gap: 8px; }
+
+  .btn-action {
+    font-family: var(--mono);
+    font-size: 0.67rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 7px 14px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition);
+    min-height: 34px;
+    border: 1px solid;
+  }
+
+  .btn-copy {
+    background: var(--accent-dim);
+    border-color: rgba(232,216,161,0.25);
+    color: var(--accent);
+  }
+
+  .btn-copy:hover {
+    background: rgba(232,216,161,0.22);
+    border-color: var(--accent);
+  }
+
+  .btn-copy.copied {
+    background: rgba(107,255,184,0.1);
+    border-color: var(--success);
+    color: var(--success);
+  }
+
+  .btn-reset {
+    background: transparent;
+    border-color: var(--border-hover);
+    color: var(--text-muted);
+  }
+
+  .btn-reset:hover {
+    border-color: var(--text-muted);
+    color: var(--text);
+  }
+
+  .output-code {
+    position: relative;
+    margin-top: 0;
+  }
+
+  pre#output-pre {
+    width: 100%;
+    background: var(--bg-input);
+    border: none;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 1.7;
+    color: var(--text-dim);
+    padding: 18px;
+    overflow-x: auto;
+    white-space: pre;
+    min-height: 120px;
+  }
+
+  pre#output-pre::-webkit-scrollbar { height: 4px; }
+  pre#output-pre::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 2px; }
+
+  /* syntax colouring */
+  .tok-kw { color: #b8edff; }
+  .tok-name { color: #e8d8a1; }
+  .tok-str { color: #a8d8a1; }
+  .tok-hex { color: #ffb8c6; }
+  .tok-punct { color: #555; }
+  .tok-comment { color: #444; font-style: italic; }
+
+  /* ── Palette swatches (visual preview row) ── */
+  .palette-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elevated);
+    min-height: 52px;
+    align-items: center;
+  }
+
+  .palette-chip {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    transition: transform 0.15s ease;
+    cursor: default;
+    position: relative;
+  }
+
+  .palette-chip:hover { transform: scale(1.2) translateY(-2px); z-index: 2; }
+
+  .palette-chip[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #111;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    padding: 3px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+    border: 1px solid var(--border-hover);
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+  }
+
+  .empty-state span {
+    display: block;
+    font-size: 2rem;
+    margin-bottom: 10px;
+    opacity: 0.3;
+  }
+
+  /* ── Error banner ── */
+  .error-banner {
+    padding: 10px 18px;
+    background: rgba(255,107,107,0.08);
+    border-top: 1px solid rgba(255,107,107,0.2);
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--danger);
+    display: none;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .error-banner.visible { display: flex; }
+
+  /* ── Status bar ── */
+  .statusbar {
+    padding: 8px 18px;
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 0.63rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .status-item { display: flex; align-items: center; gap: 5px; }
+  .status-dot { width: 5px; height: 5px; border-radius: 50%; }
+  .status-dot.ok { background: var(--success); }
+  .status-dot.warn { background: var(--accent); }
+  .status-dot.err { background: var(--danger); }
+
+  /* ── Footer ── */
+  footer {
+    margin-top: 40px;
+    padding: 20px 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+  }
+
+  .footer-hint { display: flex; align-items: center; gap: 8px; }
+  .kbd {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-hover);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--text-dim);
+  }
+
+  /* Scrollbar global */
+  * { scrollbar-width: thin; scrollbar-color: var(--border-hover) transparent; }
+
+  /* Responsive tweaks */
+  @media (max-width: 480px) {
+    header { padding: 24px 0 20px; }
+    .add-row { flex-wrap: wrap; }
+    .add-row input { min-width: 0; }
+    .output-actions { width: 100%; justify-content: flex-end; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div class="logo-area">
+      <div class="logo">
+        <div class="logo-dot"></div>
+        Chroma
+      </div>
+      <div class="tagline">JS Object Colour Editor</div>
+    </div>
+  </header>
+
+  <div class="workspace">
+
+    <!-- LEFT: Input -->
+    <div class="panel input-area">
+      <div class="panel-header">
+        <span class="panel-title">Paste JS Object</span>
+        <span class="panel-badge" id="parse-count">0 entries</span>
+      </div>
+      <textarea id="code-input" spellcheck="false" autocomplete="off" placeholder='// Paste any JS object with color values&#10;const myColors = {&#10;  "Primary": "#e8d8a1",&#10;  "Secondary": "#b8edff",&#10;  "Danger": "#ff6b6b"&#10;};'></textarea>
+      <div class="error-banner" id="error-banner">
+        <span>⚠</span>
+        <span id="error-msg">Could not parse color values</span>
+      </div>
+      <div class="input-hint">
+        <div class="hint-dot"></div>
+        Supports hex, #rgb, rgb(), hsl() — edits apply in real time
+      </div>
+    </div>
+
+    <!-- RIGHT: Color entries -->
+    <div class="panel entries-panel">
+      <div class="panel-header">
+        <span class="panel-title">Edit Colours</span>
+        <span class="panel-badge" id="entry-count">0</span>
+      </div>
+      <div class="entries-list" id="entries-list">
+        <div class="empty-state">
+          <span>⬡</span>
+          Paste a JS object to start editing
+        </div>
+      </div>
+      <div class="add-row">
+        <input type="text" id="new-key" placeholder="New key…" maxlength="60">
+        <div class="swatch-wrap-new">
+          <div class="swatch-new" id="new-swatch" style="background:#b8edff;"></div>
+          <input type="color" class="color-input-hidden" id="new-color-pick" value="#b8edff">
+        </div>
+        <button class="btn-add" id="btn-add" title="Add entry">+</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- OUTPUT (full width) -->
+  <div class="output-wrap">
+    <div class="panel">
+      <div class="panel-header output-header">
+        <span class="panel-title">Output</span>
+        <div class="output-actions">
+          <button class="btn-action btn-reset" id="btn-reset">Reset</button>
+          <button class="btn-action btn-copy" id="btn-copy">Copy</button>
+        </div>
+      </div>
+      <div class="palette-row" id="palette-row"></div>
+      <div class="output-code">
+        <pre id="output-pre"><span class="tok-comment">// Your output will appear here…</span></pre>
+      </div>
+      <div class="statusbar" id="statusbar">
+        <div class="status-item">
+          <div class="status-dot warn" id="status-dot"></div>
+          <span id="status-text">Waiting for input</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-hint">
+      Click a swatch to open the colour picker &nbsp;·&nbsp;
+      Edit hex values directly &nbsp;·&nbsp;
+      <kbd class="kbd">+</kbd> to add a new entry
+    </div>
+    <div>Chroma · Real-time JS color editor</div>
+  </footer>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── State ──────────────────────────────────────────────────────────
+  let state = {
+    prefix: '',      // everything before the opening {
+    suffix: '',      // everything after the closing }
+    entries: [],     // [{ key, value, originalValue }]
+    rawInput: ''
+  };
+
+  // ── DOM refs ───────────────────────────────────────────────────────
+  const codeInput   = document.getElementById('code-input');
+  const entriesList = document.getElementById('entries-list');
+  const outputPre   = document.getElementById('output-pre');
+  const parseCount  = document.getElementById('parse-count');
+  const entryCount  = document.getElementById('entry-count');
+  const errorBanner = document.getElementById('error-banner');
+  const errorMsg    = document.getElementById('error-msg');
+  const paletteRow  = document.getElementById('palette-row');
+  const statusDot   = document.getElementById('status-dot');
+  const statusText  = document.getElementById('status-text');
+  const btnCopy     = document.getElementById('btn-copy');
+  const btnReset    = document.getElementById('btn-reset');
+  const btnAdd      = document.getElementById('btn-add');
+  const newKeyInput = document.getElementById('new-key');
+  const newColorPick= document.getElementById('new-color-pick');
+  const newSwatch   = document.getElementById('new-swatch');
+
+  // ── Color parsing helpers ──────────────────────────────────────────
+  const HEX_RE    = /^#?([0-9a-fA-F]{3,8})$/;
+  const RGB_RE    = /^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i;
+  const RGBA_RE   = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,[\s\d.]+\)$/i;
+  const HSL_RE    = /^hsl\(\s*[\d.]+\s*,\s*[\d.%]+\s*,\s*[\d.%]+\s*\)$/i;
+
+  function looksLikeColor(v) {
+    const t = v.trim();
+    return HEX_RE.test(t) || RGB_RE.test(t) || RGBA_RE.test(t) || HSL_RE.test(t);
+  }
+
+  function normaliseHex(v) {
+    let t = v.trim();
+    if (!t.startsWith('#')) t = '#' + t;
+    // Expand 3-char hex → 6-char
+    if (/^#[0-9a-fA-F]{3}$/.test(t)) {
+      t = '#' + t[1]+t[1]+t[2]+t[2]+t[3]+t[3];
+    }
+    return t.toLowerCase();
+  }
+
+  // Try to convert any colour string to #rrggbb for the <input type=color>
+  function toPickerHex(v) {
+    const t = v.trim();
+    if (HEX_RE.test(t)) {
+      let h = t.startsWith('#') ? t : '#' + t;
+      if (h.length === 4) h = '#' + h[1]+h[1]+h[2]+h[2]+h[3]+h[3];
+      // Only 6-char hex is safe for input[type=color]
+      return /^#[0-9a-fA-F]{6}$/.test(h) ? h.toLowerCase() : '#000000';
+    }
+    const m = t.match(RGB_RE) || t.match(RGBA_RE);
+    if (m) {
+      return '#' + [m[1],m[2],m[3]].map(n => parseInt(n).toString(16).padStart(2,'0')).join('');
+    }
+    return '#000000';
+  }
+
+  // ── Input parsing ──────────────────────────────────────────────────
+  function parseInput(raw) {
+    const result = { prefix: '', suffix: '', entries: [] };
+
+    // Find first { and last }
+    const open  = raw.indexOf('{');
+    const close = raw.lastIndexOf('}');
+    if (open === -1 || close === -1 || close <= open) return null;
+
+    result.prefix = raw.slice(0, open + 1);
+    result.suffix = raw.slice(close);
+
+    const body = raw.slice(open + 1, close);
+
+    // Match key-value pairs:  "key": "value"  OR  key: "value"
+    const KV_RE = /(["\']?)([^"'\n:,{}]+)\1\s*:\s*(["\'])((?:\\.|[^\\])(?:.*?))\3/g;
+    let m;
+    while ((m = KV_RE.exec(body)) !== null) {
+      const key = m[2].trim();
+      const val = m[4].trim();
+      if (looksLikeColor(val)) {
+        result.entries.push({ key, value: val, originalValue: val });
+      }
+    }
+
+    return result.entries.length ? result : null;
+  }
+
+  // ── Render entries ─────────────────────────────────────────────────
+  function renderEntries() {
+    if (!state.entries.length) {
+      entriesList.innerHTML = '<div class="empty-state"><span>⬡</span>No colour entries found</div>';
+      entryCount.textContent = '0';
+      return;
+    }
+    entryCount.textContent = state.entries.length;
+    entriesList.innerHTML = '';
+
+    state.entries.forEach((entry, idx) => {
+      const row = document.createElement('div');
+      row.className = 'entry';
+      row.dataset.idx = idx;
+
+      const pickerHex = toPickerHex(entry.value);
+      const displayVal = entry.value.startsWith('#') ? entry.value : entry.value;
+
+      row.innerHTML = `
+        <div class="swatch-wrap" title="Click to pick colour">
+          <div class="swatch" style="background:${entry.value}"></div>
+          <input type="color" class="color-input-hidden" value="${pickerHex}" data-idx="${idx}">
+        </div>
+        <div class="entry-info">
+          <div class="entry-key" title="${entry.key}">${entry.key}</div>
+          <div class="entry-hex-wrap">
+            <input type="text" class="entry-hex" value="${displayVal}" data-idx="${idx}" spellcheck="false" maxlength="30">
+          </div>
+        </div>
+        <div class="entry-actions">
+          <button class="btn-remove" data-idx="${idx}" title="Remove">×</button>
+        </div>`;
+
+      entriesList.appendChild(row);
+    });
+
+    // Bind entry events
+    entriesList.querySelectorAll('input[type=color]').forEach(el => {
+      el.addEventListener('input', e => {
+        const idx = +e.target.dataset.idx;
+        updateEntryValue(idx, e.target.value, false);
+      });
+    });
+
+    entriesList.querySelectorAll('.entry-hex').forEach(el => {
+      el.addEventListener('input', e => {
+        const idx = +e.target.dataset.idx;
+        const v = e.target.value.trim();
+        if (looksLikeColor(v)) {
+          updateEntryValue(idx, v, true);
+        }
+      });
+      el.addEventListener('blur', e => {
+        const idx = +e.target.dataset.idx;
+        const v = e.target.value.trim();
+        if (!looksLikeColor(v)) {
+          // Revert to last valid
+          e.target.value = state.entries[idx].value;
+        }
+      });
+    });
+
+    entriesList.querySelectorAll('.btn-remove').forEach(el => {
+      el.addEventListener('click', e => {
+        const idx = +e.currentTarget.dataset.idx;
+        state.entries.splice(idx, 1);
+        renderEntries();
+        renderOutput();
+        renderPalette();
+      });
+    });
+  }
+
+  function updateEntryValue(idx, val, fromHex) {
+    state.entries[idx].value = val;
+
+    // Update sibling swatch + hex in same row
+    const row = entriesList.querySelector(`.entry[data-idx="${idx}"]`);
+    if (row) {
+      const swatch = row.querySelector('.swatch');
+      const hexInput = row.querySelector('.entry-hex');
+      const colorPicker = row.querySelector('input[type=color]');
+      if (swatch)  swatch.style.background = val;
+      if (!fromHex && hexInput) hexInput.value = val;
+      if (fromHex && colorPicker) colorPicker.value = toPickerHex(val);
+    }
+
+    renderOutput();
+    renderPalette();
+  }
+
+  // ── Render output ──────────────────────────────────────────────────
+  function renderOutput() {
+    if (!state.entries.length && !state.prefix) {
+      outputPre.innerHTML = '<span class="tok-comment">// Your output will appear here…</span>';
+      setStatus('warn', 'Waiting for input');
+      return;
+    }
+
+    const indent = detectIndent();
+    const lines = [];
+
+    if (state.prefix) {
+      // Tokenise prefix
+      lines.push(highlightPrefix(state.prefix));
+    }
+
+    state.entries.forEach((e, i) => {
+      const comma = i < state.entries.length - 1 ? ',' : '';
+      const keyStr  = `<span class="tok-str">"${escHtml(e.key)}"</span>`;
+      const colon   = `<span class="tok-punct">: </span>`;
+      const valStr  = `<span class="tok-hex">"${escHtml(e.value)}"</span>`;
+      const commaS  = comma ? `<span class="tok-punct">,</span>` : '';
+      lines.push(`${indent}${keyStr}${colon}${valStr}${commaS}`);
+    });
+
+    if (state.suffix) {
+      lines.push(highlightSuffix(state.suffix));
+    }
+
+    outputPre.innerHTML = lines.join('\n');
+    setStatus('ok', `${state.entries.length} colour${state.entries.length !== 1 ? 's' : ''} ready`);
+  }
+
+  function detectIndent() {
+    if (!state.prefix) return '  ';
+    const body = state.rawInput;
+    const open = body.indexOf('{');
+    const line = body.slice(open + 1).split('\n')[1] || '';
+    const m = line.match(/^(\s+)/);
+    return m ? m[1] : '  ';
+  }
+
+  function highlightPrefix(p) {
+    return p
+      .replace(/\b(const|let|var|export|default)\b/g, '<span class="tok-kw">$1</span>')
+      .replace(/([A-Za-z_$][A-Za-z0-9_$]*)(?=\s*=)/g, '<span class="tok-name">$1</span>')
+      .replace(/([{}])/g, '<span class="tok-punct">$1</span>');
+  }
+
+  function highlightSuffix(s) {
+    return s.replace(/([{};\n])/g, '<span class="tok-punct">$1</span>');
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Palette row ────────────────────────────────────────────────────
+  function renderPalette() {
+    paletteRow.innerHTML = '';
+    state.entries.forEach(e => {
+      const chip = document.createElement('div');
+      chip.className = 'palette-chip';
+      chip.style.background = e.value;
+      chip.title = `${e.key}: ${e.value}`;
+      paletteRow.appendChild(chip);
+    });
+  }
+
+  // ── Status bar ─────────────────────────────────────────────────────
+  function setStatus(type, msg) {
+    statusDot.className = 'status-dot ' + type;
+    statusText.textContent = msg;
+  }
+
+  // ── Main parse + re-render ─────────────────────────────────────────
+  function processInput(raw) {
+    state.rawInput = raw;
+    hideError();
+
+    if (!raw.trim()) {
+      state = { prefix:'', suffix:'', entries:[], rawInput:'' };
+      renderEntries();
+      renderOutput();
+      renderPalette();
+      parseCount.textContent = '0 entries';
+      setStatus('warn', 'Waiting for input');
+      return;
+    }
+
+    const parsed = parseInput(raw);
+    if (!parsed) {
+      // Check if there's ANY object-like structure
+      if (raw.includes('{') && raw.includes('}')) {
+        showError('No colour values detected. Ensure values are hex (#rrggbb), rgb(), or hsl().');
+      } else {
+        showError('No JS object literal found. Expected: { "key": "#hex" }');
+      }
+      setStatus('err', 'Parse error');
+      return;
+    }
+
+    const prevEntries = state.entries;
+    state.prefix  = parsed.prefix;
+    state.suffix  = parsed.suffix;
+
+    // Preserve any user edits for keys still present
+    state.entries = parsed.entries.map(e => {
+      const existing = prevEntries.find(p => p.key === e.key);
+      return existing ? { ...existing, originalValue: e.originalValue } : e;
+    });
+
+    parseCount.textContent = `${state.entries.length} entr${state.entries.length !== 1 ? 'ies' : 'y'}`;
+    renderEntries();
+    renderOutput();
+    renderPalette();
+  }
+
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorBanner.classList.add('visible');
+  }
+
+  function hideError() {
+    errorBanner.classList.remove('visible');
+  }
+
+  // ── Get clean output string ────────────────────────────────────────
+  function getOutputString() {
+    if (!state.entries.length) return '';
+    const indent = detectIndent();
+    const lines = [];
+    if (state.prefix) lines.push(state.prefix);
+    state.entries.forEach((e, i) => {
+      const comma = i < state.entries.length - 1 ? ',' : '';
+      lines.push(`${indent}"${e.key}": "${e.value}"${comma}`);
+    });
+    if (state.suffix) lines.push(state.suffix);
+    return lines.join('\n');
+  }
+
+  // ── Events ─────────────────────────────────────────────────────────
+  codeInput.addEventListener('input', () => processInput(codeInput.value));
+
+  btnCopy.addEventListener('click', () => {
+    const out = getOutputString();
+    if (!out) return;
+    navigator.clipboard.writeText(out).then(() => {
+      btnCopy.textContent = '✓ Copied!';
+      btnCopy.classList.add('copied');
+      setTimeout(() => {
+        btnCopy.textContent = 'Copy';
+        btnCopy.classList.remove('copied');
+      }, 1800);
+    }).catch(() => {
+      // Fallback
+      const ta = document.createElement('textarea');
+      ta.value = out;
+      ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      btnCopy.textContent = '✓ Copied!';
+      btnCopy.classList.add('copied');
+      setTimeout(() => { btnCopy.textContent = 'Copy'; btnCopy.classList.remove('copied'); }, 1800);
+    });
+  });
+
+  btnReset.addEventListener('click', () => {
+    if (!state.rawInput) return;
+    const reparsed = parseInput(state.rawInput);
+    if (reparsed) {
+      state.entries = reparsed.entries;
+      renderEntries();
+      renderOutput();
+      renderPalette();
+    }
+  });
+
+  // New color picker for add row
+  newColorPick.addEventListener('input', e => {
+    newSwatch.style.background = e.target.value;
+  });
+
+  btnAdd.addEventListener('click', addNewEntry);
+  newKeyInput.addEventListener('keydown', e => { if (e.key === 'Enter') addNewEntry(); });
+
+  function addNewEntry() {
+    const key = newKeyInput.value.trim();
+    if (!key) { newKeyInput.focus(); return; }
+    const val = newColorPick.value;
+    // Check duplicate
+    if (state.entries.some(e => e.key === key)) {
+      newKeyInput.style.borderColor = 'var(--danger)';
+      setTimeout(() => newKeyInput.style.borderColor = '', 1200);
+      return;
+    }
+    state.entries.push({ key, value: val, originalValue: val });
+    newKeyInput.value = '';
+    renderEntries();
+    renderOutput();
+    renderPalette();
+    // Scroll entries list to bottom
+    entriesList.scrollTop = entriesList.scrollHeight;
+  }
+
+  // ── Load sample on first visit ─────────────────────────────────────
+  const SAMPLE = `// Category colors - easily customizable
+const categoryColors = {
+    "Entertainment": "#3dd6f5",
+    "Prudence": "#f85d5d",
+    "Programming": "#4A90E2",
+    "Reading": "#50C878",
+    "Words": "#ffffff",
+    "Social Media": "#9B59B6",
+    "Money": "#3de67e",
+    "Gaming": "#99f53d",
+    "AI Chat": "#FF69B4",
+    "Shopping": "#e8d8a1",
+    "Tools": "#FFD700"
+};`;
+
+  codeInput.value = SAMPLE;
+  processInput(SAMPLE);
+
+})();
+</script>
+</body>
+</html>
